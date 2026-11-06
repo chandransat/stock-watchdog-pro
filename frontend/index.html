@@ -63,6 +63,11 @@
 
 
 <div id="status">Connecting...</div>
+<div id="status">Connecting...</div>
+<div id="syncStatus" style="text-align:center; font-size:13px; color:#64748b; margin-bottom:16px;">
+    Waiting for first data sync...
+</div>
+
 <button id="enableAudioBtn">🔊 Enable Voice Alerts</button>
 
 <div id="cards"></div>
@@ -105,7 +110,7 @@ function addLog(text) {
     logDiv.prepend(line);
 }
 
-function updateCard(name, price, direction, time) {
+function updateCard(name, price, direction, time, fetchedAt) {
     let card = stockCards[name];
     if (!card) {
         card = document.createElement("div");
@@ -114,6 +119,7 @@ function updateCard(name, price, direction, time) {
             <div>
                 <div class="name">${name}</div>
                 <div class="time"></div>
+                <div class="fetchedAt" style="font-size:11px; color:#475569;"></div>
             </div>
             <div class="price"></div>
         `;
@@ -122,10 +128,16 @@ function updateCard(name, price, direction, time) {
     }
     const priceEl = card.querySelector(".price");
     const timeEl = card.querySelector(".time");
+    const fetchedAtEl = card.querySelector(".fetchedAt");
+
     priceEl.textContent = `₹${price}`;
     priceEl.className = "price " + (direction === "up" ? "up" : direction === "down" ? "down" : "");
-    timeEl.textContent = "Updated: " + time;
+    timeEl.textContent = time ? "Last alert: " + time : "";
+    if (fetchedAt) {
+        fetchedAtEl.textContent = "🕒 Data fetched: " + fetchedAt;
+    }
 }
+
 
 const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
 const socket = new WebSocket(`${wsProtocol}://${window.location.host}/ws`);
@@ -140,14 +152,43 @@ socket.onclose = () => {
 
 socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    updateCard(data.name, data.price, data.direction || "", data.time);
+
+    // Handle lightweight sync/heartbeat updates (no voice, just price refresh)
+    if (data.type === "sync") {
+        updateSyncStatus(data.server_time, data.fetch_duration);
+        Object.entries(data.prices || {}).forEach(([name, price]) => {
+            const existingCard = stockCards[name];
+            if (existingCard) {
+                const priceEl = existingCard.querySelector(".price");
+                const fetchedAtEl = existingCard.querySelector(".fetchedAt");
+                priceEl.textContent = `₹${price}`;
+                fetchedAtEl.textContent = "🕒 Data fetched: " + data.server_time;
+            }
+        });
+        return;
+    }
+
+    updateCard(data.name, data.price, data.direction || "", data.time, data.fetched_at || "");
     addLog(`[${data.time}] ${data.text}`);
-    
+
     // Save this as the latest known message for this stock
     latestMessages[data.name] = data.text;
 
     speak(data.text);
 };
+
+function updateSyncStatus(serverTime, fetchDuration) {
+    const el = document.getElementById("syncStatus");
+    el.textContent = `🔄 Last synced: ${serverTime} (fetch took ${fetchDuration}s)`;
+    el.style.color = fetchDuration > 10 ? "#f87171" : "#4ade80";
+
+    clearTimeout(window._staleCheckTimer);
+    window._staleCheckTimer = setTimeout(() => {
+        el.textContent = `⚠️ No data received in over 70 seconds. Server may be asleep or disconnected.`;
+        el.style.color = "#f87171";
+    }, 70000);
+}
+
 
 </script>
 </body>

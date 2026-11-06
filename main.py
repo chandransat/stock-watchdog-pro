@@ -40,7 +40,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Immediately send whatever prices we already know, even if market is closed
     try:
-        timestamp = datetime.now().strftime("%I:%M %p")
+        timestamp = datetime.now().strftime("%I:%M:%S %p")
         for symbol, price in last_prices.items():
             name = WATCHLIST.get(symbol, symbol)
             snapshot_msg = {
@@ -48,6 +48,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "name": name,
                 "price": price,
                 "time": timestamp,
+                "fetched_at": timestamp,
                 "text": f"{name} is currently at {price} rupees."
             }
             await websocket.send_json(snapshot_msg)
@@ -85,15 +86,15 @@ def fetch_prices():
             print(f"[WARN] Could not fetch {symbol}: {e}")
     return results
 
-
 async def price_polling_loop():
-    """Background task: runs forever, checks prices, broadcasts changes."""
+    """Background task: runs forever, checks prices, broadcasts changes, and reports sync health."""
     global last_prices
     print("Price polling loop started.")
     while True:
+        fetch_started_at = datetime.now()
         try:
             current = fetch_prices()
-            timestamp = datetime.now().strftime("%I:%M %p")
+            timestamp = fetch_started_at.strftime("%I:%M:%S %p")
 
             for symbol, data in current.items():
                 name = data["name"]
@@ -106,6 +107,7 @@ async def price_polling_loop():
                         "name": name,
                         "price": price,
                         "time": timestamp,
+                        "fetched_at": timestamp,
                         "text": f"Monitoring started for {name} at {price} rupees."
                     }
                     await broadcast(message)
@@ -120,11 +122,27 @@ async def price_polling_loop():
                             "change": diff,
                             "direction": direction,
                             "time": timestamp,
+                            "fetched_at": timestamp,
                             "text": f"{name} is {direction} by {abs(diff)} rupees, now at {price} rupees."
                         }
                         await broadcast(message)
 
                 last_prices[symbol] = price
+
+            # ---- Always send a lightweight SYNC heartbeat, even if no alert fired ----
+            fetch_duration = (datetime.now() - fetch_started_at).total_seconds()
+            sync_payload = {
+                "type": "sync",
+                "server_time": timestamp,
+                "fetch_duration": round(fetch_duration, 2),
+                "prices": {
+                    WATCHLIST[symbol]: data["price"]
+                    for symbol, data in current.items()
+                }
+            }
+            await broadcast(sync_payload)
+
+            print(f"[{timestamp}] Fetch cycle completed in {fetch_duration:.2f}s for {len(current)} symbol(s).")
 
         except Exception as e:
             print(f"Polling loop error: {e}")
