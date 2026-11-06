@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Watchdog Pro - POC by Sathish Chandran for Jayakumar</title>
+
+<style>
+    body {
+        font-family: 'Segoe UI', sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        margin: 0;
+        padding: 20px;
+    }
+    h1 { color: #38bdf8; text-align: center; }
+    #status { text-align: center; color: #94a3b8; margin-bottom: 20px; }
+    .card {
+        background: #1e293b;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .name { font-weight: bold; font-size: 18px; }
+    .price { font-size: 20px; }
+    .up { color: #4ade80; }
+    .down { color: #f87171; }
+    .time { font-size: 12px; color: #64748b; }
+    #log {
+        margin-top: 20px;
+        background: #111827;
+        padding: 10px;
+        border-radius: 8px;
+        max-height: 200px;
+        overflow-y: auto;
+        font-size: 13px;
+        color: #9ca3af;
+    }
+    button {
+        display: block;
+        margin: 20px auto;
+        padding: 12px 24px;
+        background: #38bdf8;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        color: #0f172a;
+        font-weight: bold;
+        cursor: pointer;
+    }
+</style>
+</head>
+<body>
+
+<h1>📈 Stock Watchdog Pro</h1>
+<p style="text-align:center; color:#94a3b8; margin-top:-10px; font-size:14px; font-weight:bold;">
+    POC by Sathish Chandran for Jayakumar
+</p>
+
+
+<div id="status">Connecting...</div>
+<button id="enableAudioBtn">🔊 Enable Voice Alerts</button>
+
+<div id="cards"></div>
+<div id="log"></div>
+
+<script>
+let audioEnabled = false;
+const cardsDiv = document.getElementById("cards");
+const logDiv = document.getElementById("log");
+const statusDiv = document.getElementById("status");
+const stockCards = {};
+const latestMessages = {};
+
+
+document.getElementById("enableAudioBtn").addEventListener("click", () => {
+    audioEnabled = true;
+    document.getElementById("enableAudioBtn").innerText = "✅ Voice Alerts Active";
+
+    const intro = new SpeechSynthesisUtterance("Voice alerts enabled. Here are the latest prices.");
+    window.speechSynthesis.speak(intro);
+
+    // Speak whatever prices we already know about right now
+    Object.values(latestMessages).forEach((text) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+    });
+});
+
+function speak(text) {
+    if (!audioEnabled) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    window.speechSynthesis.speak(utterance);
+}
+
+function addLog(text) {
+    const line = document.createElement("div");
+    line.textContent = text;
+    logDiv.prepend(line);
+}
+
+function updateCard(name, price, direction, time) {
+    let card = stockCards[name];
+    if (!card) {
+        card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+            <div>
+                <div class="name">${name}</div>
+                <div class="time"></div>
+            </div>
+            <div class="price"></div>
+        `;
+        cardsDiv.appendChild(card);
+        stockCards[name] = card;
+    }
+    const priceEl = card.querySelector(".price");
+    const timeEl = card.querySelector(".time");
+    priceEl.textContent = `₹${price}`;
+    priceEl.className = "price " + (direction === "up" ? "up" : direction === "down" ? "down" : "");
+    timeEl.textContent = "Updated: " + time;
+}
+
+const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+const socket = new WebSocket(`${wsProtocol}://${window.location.host}/ws`);
+
+socket.onopen = () => {
+    statusDiv.textContent = "🟢 Connected — Live Monitoring Active";
+};
+
+socket.onclose = () => {
+    statusDiv.textContent = "🔴 Disconnected. Refresh page to reconnect.";
+};
+
+socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    updateCard(data.name, data.price, data.direction || "", data.time);
+    addLog(`[${data.time}] ${data.text}`);
+    
+    // Save this as the latest known message for this stock
+    latestMessages[data.name] = data.text;
+
+    speak(data.text);
+};
+
+</script>
+</body>
+</html>
