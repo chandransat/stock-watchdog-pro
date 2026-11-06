@@ -1,9 +1,11 @@
 import asyncio
+import os
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
+
 
 app = FastAPI()
 
@@ -25,8 +27,9 @@ WATCHLIST = {
     "ONGC.NS": "O N G C"
 }
 
-POLL_INTERVAL = 30
-MIN_CHANGE_TO_ALERT = 0.50
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", 30))
+MIN_CHANGE_TO_ALERT = float(os.environ.get("MIN_CHANGE_TO_ALERT", 0.50))
+
 # =========================================================
 
 connected_clients = set()
